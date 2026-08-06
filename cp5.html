@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Checkpoint 5: WASM vs WebGPU Transformer Crossover Benchmark</title>
+    <title>Checkpoint 5: AI Crossover Stress Test (WASM vs WebGPU)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       body {
@@ -118,7 +118,7 @@
 
       .chart-box {
         position: relative;
-        height: 340px;
+        height: 360px;
         margin-top: 10px;
       }
 
@@ -171,6 +171,15 @@
         border: 1px solid #fde047;
       }
 
+      .win {
+        color: #059669;
+        font-weight: 700;
+      }
+
+      .lose {
+        color: #dc2626;
+      }
+
       .note-box {
         background-color: #f8fafc;
         border-left: 4px solid #2563eb;
@@ -193,289 +202,311 @@
   </head>
   <body>
     <div class="container">
-      <h1>Checkpoint 5: WASM vs WebGPU Transformer Crossover Benchmark</h1>
+      <h1>Checkpoint 5 — AI Crossover Stress Test</h1>
       <p class="subtitle">
-        เปรียบเทียบเวลาประมวลผล Transformer Model (<code>Xenova/bert-base-NER</code>) 
-        ระหว่าง <strong>WASM (CPU)</strong> และ <strong>WebGPU (GPU)</strong> 
-        ตามขนาด Batch Size เพื่อหาจุด Crossover Point
+        Batch Inference: <strong>WASM (CPU, dtype=q8)</strong> vs <strong>WebGPU (GPU, dtype=fp32)</strong> 
+        วัดแบบ End-to-End Latency (Init + Run Time) — ดูรายละเอียดการ log ผลเพิ่มเติมใน DevTools Console (F12)
       </p>
 
       <div class="panel">
         <div class="controls">
-          <button id="run-btn" class="btn" onclick="startBenchmark()">
-            เริ่มต้นทดสอบ (Run Benchmark)
-          </button>
-          <div id="status">พร้อมใช้งาน - กดปุ่มเพื่อเริ่มทดสอบ</div>
+          <button id="run" class="btn">▶ Run Benchmark</button>
+          <div id="status">พร้อมเริ่ม — เปิด DevTools Console ไว้ดูผลแบบละเอียด</div>
         </div>
       </div>
 
       <div class="summary-box">
         <div class="summary-card">
-          <div class="card-title">WASM เร็วกว่าที่ช่วง</div>
-          <div class="card-value" id="wasm-range">-</div>
+          <div class="card-title">WASM Init Cost</div>
+          <div class="card-value" id="wasm-init-val">-</div>
         </div>
         <div class="summary-card highlight">
-          <div class="card-title">Crossover Point (จุดตัด)</div>
+          <div class="card-title">Crossover Point (End-to-End)</div>
           <div class="card-value" id="crossover-point">ยังไม่ได้ทดสอบ</div>
         </div>
         <div class="summary-card">
-          <div class="card-title">WebGPU เร็วกว่าที่ช่วง</div>
-          <div class="card-value" id="webgpu-range">-</div>
+          <div class="card-title">WebGPU Init Cost</div>
+          <div class="card-value" id="webgpu-init-val">-</div>
         </div>
       </div>
 
       <div class="panel">
-        <h3>กราฟเปรียบเทียบเวลา (Execution Time vs Batch Size)</h3>
+        <h3>กราฟ End-to-End Latency vs Batch Size (Log Scale)</h3>
         <div class="chart-box">
-          <canvas id="benchmarkChart"></canvas>
+          <canvas id="chart"></canvas>
         </div>
       </div>
 
       <div class="panel">
-        <h3>ตารางสรุปผลการทดสอบ Transformer Batch Inference</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Batch Size (Sentences)</th>
-              <th>WASM Time (ms)</th>
-              <th>WebGPU Time (ms)</th>
-              <th>Winner</th>
-              <th>Speedup Ratio</th>
-              <th>Crossover Status</th>
-            </tr>
-          </thead>
-          <tbody id="results-body">
-            <tr>
-              <td
-                colspan="6"
-                style="text-align: center; color: #6b7280; padding: 20px"
-              >
-                กดปุ่ม "เริ่มต้นทดสอบ" เพื่อรัน Transformer Benchmark
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <h3>ตารางสรุปผลการทดสอบ End-to-End (Init + Inference)</h3>
+        <div id="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Batch Size</th>
+                <th>WASM (ms)</th>
+                <th>WebGPU (ms)</th>
+                <th>WASM /item</th>
+                <th>WebGPU /item</th>
+                <th>Speedup</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="results-body">
+              <tr>
+                <td colspan="7" style="text-align: center; color: #6b7280; padding: 20px;">
+                  กดปุ่ม "Run Benchmark" เพื่อเริ่มการทดสอบ
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="note-box">
-        <h4>ข้อสังเกตและวิเคราะห์ผลลัพธ์ (Transformer Model):</h4>
+        <h4>หลักการทดสอบ (AI Crossover Stress Test):</h4>
         <ul>
           <li>
-            <strong>Batch Size ขนาดเล็ก (1-2 ประโยค):</strong> WASM (CPU) อาจทำเวลาได้ใกล้เคียงหรือได้เปรียบด้าน Initialization / CPU Overhead ต่ำกว่า
+            <strong>การเลือก Data Type (dtype):</strong> 
+            WASM เลือกใช้ <code>q8 (int8)</code> เพราะ CPU มี SIMD instruction สำหรับ int8 โดยตรง ช่วยให้คำนวณเร็วที่สุด 
+            ขณะที่ WebGPU เลือกใช้ <code>fp32</code> เนื่องจาก GPU shader ไม่มี native int8 หากใช้ q8 จะต้อง dequantize เป็น float ทุก operation ทำให้เกิด overhead
           </li>
           <li>
-            <strong>Batch Size ขนาดใหญ่ (4-32+ ประโยค):</strong> WebGPU (GPU) จะมีประสิทธิภาพสูงกว่าอย่างชัดเจนจากการประมวลผล Matrix Multiplication แบบขนาน (Parallel Tensor Operations)
+            <strong>วัดแบบ End-to-End (init + run):</strong> 
+            สะท้อนต้นทุนจริงของงาน "เปิดหน้าเว็บมาแล้วประมวลผล N รายการ" โดย <code>init</code> คือเวลาโหลดโมเดล, อัปน้ำหนักขึ้น VRAM และคอมไพล์ Shader
           </li>
           <li>
-            <strong>Crossover Point:</strong> ขนาด Batch Size ของข้อความที่เวลาประมวลผลของ WebGPU พลิกมาเร็วกว่า WASM
+            <strong>จุด Crossover Point:</strong> 
+            WebGPU มีค่า Init สูงกว่า WASM มาก ส่งผลให้แพ้ตอน Batch ขนาดเล็ก แต่เมื่อ N โตขึ้นเรื่อยๆ ต้นทุน Init จะถูกหารเฉลี่ยจนความเร็วขนานของ GPU ชนะ WASM
           </li>
         </ul>
       </div>
     </div>
 
     <script type="module">
-      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3";
 
-      const BATCH_SIZES = [1, 2, 4, 8, 16, 32];
-      const SAMPLE_SENTENCES = [
-        "Looking for 5mm stainless steel sheets from Posco in Pohang.",
-        "Apple Inc. announced new AI chips designed in Cupertino California.",
-        "Google headquarters is located in Mountain View, California.",
-        "Tesla is expanding its Giga Factory operations in Berlin Germany.",
-        "Samsung Electronics reported high demand for DRAM memory chips.",
-        "Microsoft is integrating OpenAI models into Azure Cloud services.",
-        "Amazon fulfillment center operates automated robotics in Seattle.",
-        "NVIDIA graphics processors accelerate deep learning computation worldwide."
-      ];
+      const MODEL = 'Xenova/bert-base-NER';
+      const SENTENCE = 'Looking for 5mm stainless steel sheets from Posco.';
+      const BATCHES = [1, 10, 50, 100, 500];
+      const DTYPE = { wasm: 'q8', webgpu: 'fp32' };
 
-      function generateBatch(size) {
-        const batch = [];
-        for (let i = 0; i < size; i++) {
-          batch.push(SAMPLE_SENTENCES[i % SAMPLE_SENTENCES.length]);
-        }
-        return batch;
-      }
+      const $status = document.getElementById('status');
+      const $run = document.getElementById('run');
+      const $tbody = document.getElementById('results-body');
+      const $wasmInit = document.getElementById('wasm-init-val');
+      const $webgpuInit = document.getElementById('webgpu-init-val');
+      const $crossoverPoint = document.getElementById('crossover-point');
 
-      let extractor_wasm = null;
-      let extractor_gpu = null;
+      const log = (m) => { $status.textContent = m; console.log(m); };
+
+      const results = {
+        wasm: { init: null, batches: {} },
+        webgpu: { init: null, batches: {} },
+      };
+
       let chart = null;
 
       function initChart() {
-        const ctx = document.getElementById("benchmarkChart").getContext("2d");
+        const ctx = document.getElementById('chart').getContext('2d');
         chart = new Chart(ctx, {
-          type: "line",
+          type: 'line',
           data: {
-            labels: BATCH_SIZES.map((n) => `Batch ${n}`),
+            labels: BATCHES.map(b => `Batch ${b}`),
             datasets: [
               {
-                label: "WASM Time (ms)",
-                borderColor: "#d97706",
-                backgroundColor: "rgba(217, 119, 6, 0.1)",
+                label: 'WASM (CPU, q8)',
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
                 data: [],
                 borderWidth: 2,
                 tension: 0.2,
               },
               {
-                label: "WebGPU Time (ms)",
-                borderColor: "#059669",
-                backgroundColor: "rgba(5, 150, 105, 0.1)",
+                label: 'WebGPU (GPU, fp32)',
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 data: [],
                 borderWidth: 2,
                 tension: 0.2,
-              },
-            ],
+              }
+            ]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
               x: {
-                title: { display: true, text: "Batch Size (Number of Sentences)" },
+                title: { display: true, text: 'Batch Size (จำนวนข้อความต่อการเรียก)' }
               },
               y: {
-                type: "linear",
-                title: { display: true, text: "Inference Time (ms)" },
-              },
-            },
-          },
+                type: 'logarithmic',
+                title: { display: true, text: 'End-to-End Time (ms) - Log Scale' }
+              }
+            }
+          }
         });
       }
 
-      async function startBenchmark() {
-        const runBtn = document.getElementById("run-btn");
-        const status = document.getElementById("status");
-        const tbody = document.getElementById("results-body");
+      async function benchDevice(device) {
+        console.group(`%c=== ${device.toUpperCase()} (dtype=${DTYPE[device]}) ===`,
+          'color:#1b6ef3;font-weight:bold;font-size:14px');
 
-        runBtn.disabled = true;
-        tbody.innerHTML = "";
+        log(`[${device}] กำลังโหลดโมเดล ${MODEL} ...`);
+        const t0 = performance.now();
+        const extractor = await pipeline('token-classification', MODEL, {
+          device,
+          dtype: DTYPE[device],
+        });
 
-        try {
-          // 1. โหลดโมเดล WASM
-          if (!extractor_wasm) {
-            status.innerText = "⏳ โหลดโมเดล Transformer WASM (CPU)...";
-            extractor_wasm = await pipeline(
-              "token-classification",
-              "Xenova/bert-base-NER",
-              { device: "wasm" }
-            );
-          }
+        await extractor([SENTENCE]);
+        results[device].init = performance.now() - t0;
+        console.log(`init (load + upload to VRAM + compile shaders) = ${results[device].init.toFixed(0)} ms`);
 
-          // 2. โหลดโมเดล WebGPU
-          if (!extractor_gpu) {
-            if (!navigator.gpu) {
-              alert("เบราว์เซอร์นี้ไม่รองรับ WebGPU");
-              status.innerText = "❌ WebGPU ไม่ได้รับการรองรับ";
-              return;
-            }
-            status.innerText = "⏳ โหลดโมเดล Transformer WebGPU (GPU)...";
-            extractor_gpu = await pipeline(
-              "token-classification",
-              "Xenova/bert-base-NER",
-              { device: "webgpu", dtype: "fp32" }
-            );
-          }
+        for (const batchSize of BATCHES) {
+          const batchData = Array(batchSize).fill(SENTENCE);
 
-          // 3. Warmup
-          status.innerText = "🔥 กำลัง Warmup Shaders & Pipelines...";
-          await extractor_wasm(["Warmup sentence"], { aggregation_strategy: "first" });
-          await extractor_gpu(["Warmup sentence"], { aggregation_strategy: "first" });
+          log(`[${device}] batch = ${batchSize} ...`);
+          await new Promise(r => setTimeout(r, 0));
 
-          if (!chart) initChart();
+          const t = performance.now();
+          const output = await extractor(batchData);
+          const run = performance.now() - t;
 
-          const wasmTimes = [];
-          const webgpuTimes = [];
-          let crossoverBatch = null;
-          let prevWinner = null;
+          results[device].batches[batchSize] = run;
+          const total = results[device].init + run;
 
-          // 4. ทดสอบแต่ละ Batch Size
-          for (let i = 0; i < BATCH_SIZES.length; i++) {
-            const batchSize = BATCH_SIZES[i];
-            status.innerText = `⚡ กำลังทดสอบ Batch Size: ${batchSize} ประโยค...`;
-            const inputBatch = generateBatch(batchSize);
+          console.log(
+            `batch=${String(batchSize).padStart(3)} | ` +
+            `run=${run.toFixed(2).padStart(9)} ms | ` +
+            `end-to-end=${total.toFixed(2).padStart(9)} ms | ` +
+            `per-item=${(total / batchSize).toFixed(3).padStart(8)} ms | ` +
+            `results=${output.length}`
+          );
 
-            // WASM Inference
-            const startWasm = performance.now();
-            await extractor_wasm(inputBatch, { aggregation_strategy: "first" });
-            const wasmTime = performance.now() - startWasm;
-
-            // WebGPU Inference
-            const startGpu = performance.now();
-            await extractor_gpu(inputBatch, { aggregation_strategy: "first" });
-            const webgpuTime = performance.now() - startGpu;
-
-            wasmTimes.push(wasmTime);
-            webgpuTimes.push(webgpuTime);
-
-            const isWasmFaster = wasmTime < webgpuTime;
-            const currentWinner = isWasmFaster ? "WASM" : "WebGPU";
-            const speedup = isWasmFaster
-              ? (webgpuTime / wasmTime).toFixed(2) + "x"
-              : (wasmTime / webgpuTime).toFixed(2) + "x";
-
-            let isCrossover = false;
-            if (prevWinner && prevWinner !== currentWinner && !crossoverBatch) {
-              crossoverBatch = batchSize;
-              isCrossover = true;
-            }
-            prevWinner = currentWinner;
-
-            const tr = document.createElement("tr");
-            if (isCrossover) tr.classList.add("crossover-row");
-
-            tr.innerHTML = `
-              <td>Batch Size = ${batchSize} (${batchSize} ประโยค)</td>
-              <td style="color: #b45309; font-weight: 600;">${wasmTime.toFixed(2)} ms</td>
-              <td style="color: #047857; font-weight: 600;">${webgpuTime.toFixed(2)} ms</td>
-              <td>
-                <span class="badge ${isWasmFaster ? "badge-wasm" : "badge-webgpu"}">
-                  ${currentWinner}
-                </span>
-              </td>
-              <td>${speedup}</td>
-              <td>
-                ${isCrossover ? '<span class="badge badge-crossover">🎯 Crossover Point</span>' : "-"}
-              </td>
-            `;
-            tbody.appendChild(tr);
-
-            chart.data.datasets[0].data = wasmTimes;
-            chart.data.datasets[1].data = webgpuTimes;
-            chart.update();
-
-            await new Promise((r) => setTimeout(r, 50));
-          }
-
-          // สรุปผล Crossover
-          const crossoverCard = document.getElementById("crossover-point");
-          const wasmRange = document.getElementById("wasm-range");
-          const webgpuRange = document.getElementById("webgpu-range");
-
-          if (crossoverBatch) {
-            crossoverCard.innerText = `Batch Size ~ ${crossoverBatch}`;
-            wasmRange.innerText = `< ${crossoverBatch}`;
-            webgpuRange.innerText = `≥ ${crossoverBatch}`;
-          } else {
-            if (wasmTimes[wasmTimes.length - 1] < webgpuTimes[webgpuTimes.length - 1]) {
-              crossoverCard.innerText = "ไม่พบ (WASM เร็วกว่าทุกช่วง)";
-              wasmRange.innerText = "ทุกช่วง";
-              webgpuRange.innerText = "N/A";
-            } else {
-              crossoverCard.innerText = `Batch Size ≤ ${BATCH_SIZES[0]}`;
-              wasmRange.innerText = "N/A";
-              webgpuRange.innerText = "ทุกช่วง";
-            }
-          }
-
-          status.innerText = "✅ การทดสอบ Transformer Benchmark เสร็จสมบูรณ์!";
-        } catch (err) {
-          console.error("Benchmark error:", err);
-          status.innerText = "❌ เกิดข้อผิดพลาด: " + err.message;
-        } finally {
-          runBtn.disabled = false;
+          render();
         }
+
+        console.groupEnd();
+        await extractor.dispose?.();
       }
 
-      window.startBenchmark = startBenchmark;
+      const e2e = (device, b) => {
+        const r = results[device];
+        return (r.init != null && r.batches[b] != null) ? r.init + r.batches[b] : null;
+      };
+
+      const findCrossover = () => BATCHES.find(b =>
+        e2e('wasm', b) && e2e('webgpu', b) && e2e('wasm', b) > e2e('webgpu', b));
+
+      function renderTable() {
+        const dash = '<span style="color:#9ca3af;">—</span>';
+        const cross = findCrossover();
+
+        $wasmInit.innerText = results.wasm.init != null ? `${results.wasm.init.toFixed(0)} ms` : '-';
+        $webgpuInit.innerText = results.webgpu.init != null ? `${results.webgpu.init.toFixed(0)} ms` : '-';
+        $crossoverPoint.innerText = cross ? `🔥 Batch ${cross}` : (results.wasm.init && results.webgpu.init ? 'ไม่พบช่วงใน BATCHES' : 'กำลังรัน...');
+
+        $tbody.innerHTML = BATCHES.map(b => {
+          const w = e2e('wasm', b);
+          const g = e2e('webgpu', b);
+          const speedup = (w && g) ? w / g : null;
+          const cls = speedup == null ? '' : speedup >= 1 ? 'win' : 'lose';
+          const isCross = b === cross;
+
+          return `<tr class="${isCross ? 'crossover-row' : ''}">
+            <td>${b}${isCross ? ' 🔥' : ''}</td>
+            <td>${w ? w.toFixed(1) + ' ms' : dash}</td>
+            <td>${g ? g.toFixed(1) + ' ms' : dash}</td>
+            <td>${w ? (w / b).toFixed(2) + ' ms' : dash}</td>
+            <td>${g ? (g / b).toFixed(2) + ' ms' : dash}</td>
+            <td class="${cls}">${speedup == null ? '—' : speedup.toFixed(2) + '×'}</td>
+            <td>
+              ${isCross ? '<span class="badge badge-crossover">🎯 Crossover Point</span>' : 
+                (speedup != null ? `<span class="badge ${speedup >= 1 ? 'badge-webgpu' : 'badge-wasm'}">${speedup >= 1 ? 'WebGPU' : 'WASM'}</span>` : '-')}
+            </td>
+          </tr>`;
+        }).join('');
+      }
+
+      function updateChart() {
+        if (!chart) initChart();
+        chart.data.datasets[0].data = BATCHES.map(b => e2e('wasm', b));
+        chart.data.datasets[1].data = BATCHES.map(b => e2e('webgpu', b));
+        chart.update();
+      }
+
+      const render = () => {
+        renderTable();
+        updateChart();
+      };
+
+      $run.addEventListener('click', async () => {
+        $run.disabled = true;
+        results.wasm = { init: null, batches: {} };
+        results.webgpu = { init: null, batches: {} };
+        render();
+
+        const hasWebGPU = 'gpu' in navigator && !!(await navigator.gpu.requestAdapter());
+        console.log(`WebGPU available: ${hasWebGPU}`);
+        if (!hasWebGPU) log('⚠ เบราว์เซอร์นี้ไม่รองรับ WebGPU — จะรันเฉพาะ WASM');
+
+        for (const device of ['wasm', 'webgpu']) {
+          if (device === 'webgpu' && !hasWebGPU) continue;
+          try {
+            await benchDevice(device);
+          } catch (e) {
+            console.error(`[${device}] ล้มเหลว:`, e);
+            log(`[${device}] ล้มเหลว: ${e.message}`);
+          }
+        }
+
+        console.group('%c=== SUMMARY: Crossover Analysis ===',
+          'color:#34d399;font-weight:bold;font-size:14px');
+
+        console.log(`Startup cost — WASM init = ${results.wasm.init?.toFixed(0)} ms, ` +
+                    `WebGPU init = ${results.webgpu.init?.toFixed(0)} ms ` +
+                    `(GPU ต้องอัปน้ำหนักขึ้น VRAM + คอมไพล์ shader ก่อน)`);
+
+        console.table(BATCHES.map(b => ({
+          'Batch Size': b,
+          'WASM (ms)': e2e('wasm', b)?.toFixed(2) ?? 'n/a',
+          'WebGPU (ms)': e2e('webgpu', b)?.toFixed(2) ?? 'n/a',
+          'WASM /item (ms)': e2e('wasm', b) ? (e2e('wasm', b) / b).toFixed(3) : 'n/a',
+          'WebGPU /item (ms)': e2e('webgpu', b) ? (e2e('webgpu', b) / b).toFixed(3) : 'n/a',
+          'Speedup (WASM/GPU)': (e2e('wasm', b) && e2e('webgpu', b))
+            ? (e2e('wasm', b) / e2e('webgpu', b)).toFixed(2) + 'x' : 'n/a',
+        })));
+
+        const max = BATCHES[BATCHES.length - 1];
+        const crossover = findCrossover();
+
+        if (crossover) {
+          console.log(`%c🔥 CROSSOVER POINT = batch ${crossover} — ตั้งแต่จุดนี้ WebGPU แซง WASM แบบ end-to-end`,
+            'color:#34d399;font-weight:bold;font-size:13px');
+          const below = BATCHES.filter(b => b < crossover);
+          if (below.length) {
+            console.log(`ต่ำกว่านั้น (batch ${below.join(', ')}) WASM ชนะ ` +
+                        `เพราะค่า startup ${results.webgpu.init?.toFixed(0)} ms ของ GPU ยังหารไม่คุ้ม`);
+          }
+          if (e2e('wasm', max) && e2e('webgpu', max)) {
+            console.log(`ที่ batch ${max}: WebGPU เร็วกว่า ${(e2e('wasm', max) / e2e('webgpu', max)).toFixed(2)}× ` +
+                `| per-item WASM ${(e2e('wasm', max) / max).toFixed(2)} ms vs WebGPU ${(e2e('webgpu', max) / max).toFixed(2)} ms`);
+          }
+        } else {
+          console.log('%cยังไม่พบ crossover ในช่วงที่ทดสอบ — ลองเพิ่ม batch size',
+            'color:#f87171;font-weight:bold');
+        }
+        console.groupEnd();
+
+        log(crossover
+          ? `✔ เสร็จสิ้น — Crossover Point อยู่ที่ batch ${crossover} (ดูรายละเอียดใน Console)`
+          : '✔ เสร็จสิ้น — ดูรายละเอียดใน Console');
+        $run.disabled = false;
+        render();
+      });
+
+      render();
     </script>
   </body>
 </html>
