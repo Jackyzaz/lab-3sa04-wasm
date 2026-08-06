@@ -1,33 +1,61 @@
 <!doctype html>
-<html>
+<html lang="th">
   <head>
     <meta charset="UTF-8" />
     <title>Cp3 AI CPU Baseline (WASM)</title>
   </head>
   <body>
     <h1>Cp3 AI CPU Baseline (WASM)</h1>
-    <div id="status" style="font-size: 18px; margin-top: 15px">
-      ⏳ กำลังโหลดโมเดล BERT NER (WASM)...
-    </div>
-    <div id="result" style="margin-top: 15px"></div>
+    <div id="status">⏳ กำลังโหลดโมเดล BERT NER (WASM)...</div>
+    <div id="result"></div>
 
     <script type="module">
       import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
 
       async function runWASM() {
-        // โหลดโมเดล NER (ค่าเริ่มต้นจะถูกแปลงไปรันบน WASM/CPU อัตโนมัติ)
-        const extractor = await pipeline(
-          "token-classification",
-          "Xenova/bert-base-NER",
-        );
+        const statusDiv = document.getElementById("status");
+        const resultDiv = document.getElementById("result");
+        const inputText = "Looking for 5mm stainless steel sheets from Posco.";
 
-        const start = performance.now();
-        const output = await extractor(
-          "Looking for 5mm stainless steel sheets from Posco.",
-        );
+        try {
+          // 1. โหลดโมเดล NER (ค่าเริ่มต้นจะถูกแปลงไปรันบน WASM/CPU อัตโนมัติ)
+          const extractor = await pipeline(
+            "token-classification",
+            "Xenova/bert-base-NER",
+          );
 
-        console.log("Output:", output);
-        console.log("WASM Time:", (performance.now() - start).toFixed(2), "ms");
+          statusDiv.innerText =
+            "⚡ กำลังประมวลผลข้อความบน WASM/CPU (Inference)...";
+
+          // 2. เริ่มจับเวลาการประมวลผล
+          const start = performance.now();
+          const output = await extractor(inputText, {
+            aggregation_strategy: "first",
+          });
+          const executionTime = (performance.now() - start).toFixed(2);
+
+          console.log("Output:", output);
+          console.log("WASM Time:", executionTime, "ms");
+
+          // 3. แสดงผลลัพธ์บนหน้าเว็บ HTML
+          statusDiv.innerHTML =
+            "✅ <strong>ประมวลผลด้วย WASM เสร็จสิ้น!</strong>";
+          resultDiv.innerHTML = `
+            <p><strong>ข้อความ Input:</strong> "${inputText}"</p>
+            <p><strong>WASM Time:</strong> <span style="color: #007600; font-size: 20px; font-weight: bold;">${executionTime} ms</span></p>
+            <h3>ผลลัพธ์ที่ตรวจพบ (Entities):</h3>
+            <ul>
+              ${output.map((item) => `<li><strong>${item.word}</strong> - Entity: <code class="badge">${item.entity_group || item.entity}</code> (Score: ${(item.score * 100).toFixed(1)}%)</li>`).join("")}
+            </ul>
+            <details open style="margin-top: 10px;">
+              <summary style="cursor: pointer; font-weight: bold;">📦 Raw Output Object (console.log)</summary>
+              <pre style="background: #252526; color: #4ec9b0; padding: 10px; border-radius: 5px; overflow-x: auto;">${JSON.stringify(output, null, 2)}</pre>
+            </details>
+          `;
+        } catch (error) {
+          console.error("WASM Error:", error);
+          statusDiv.innerHTML = `<span style='color: red;'>❌ เกิดข้อผิดพลาดในการรัน WASM: ${error.message}</span>`;
+        }
       }
 
       // เรียกใช้งานเมื่อต้องการทดสอบ
