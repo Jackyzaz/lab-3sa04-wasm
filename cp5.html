@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Checkpoint 5: WASM vs WebGPU Batch Size Crossover Benchmark</title>
+    <title>Checkpoint 5: WASM vs WebGPU Transformer Crossover Benchmark</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       body {
@@ -66,6 +66,7 @@
         font-weight: 600;
         border-radius: 6px;
         cursor: pointer;
+        transition: background-color 0.2s;
       }
 
       .btn:hover {
@@ -117,7 +118,7 @@
 
       .chart-box {
         position: relative;
-        height: 320px;
+        height: 340px;
         margin-top: 10px;
       }
 
@@ -172,7 +173,7 @@
 
       .note-box {
         background-color: #f8fafc;
-        border-left: 4px solid #64748b;
+        border-left: 4px solid #2563eb;
         padding: 14px 18px;
         font-size: 0.9rem;
         color: #334155;
@@ -192,10 +193,11 @@
   </head>
   <body>
     <div class="container">
-      <h1>Checkpoint 5: WASM vs WebGPU Batch Size Benchmark</h1>
+      <h1>Checkpoint 5: WASM vs WebGPU Transformer Crossover Benchmark</h1>
       <p class="subtitle">
-        เปรียบเทียบเวลาประมวลผลระหว่าง WASM (CPU) และ WebGPU (GPU)
-        ตามขนาดข้อมูลเพื่อหาจุด Crossover
+        เปรียบเทียบเวลาประมวลผล Transformer Model (<code>Xenova/bert-base-NER</code>) 
+        ระหว่าง <strong>WASM (CPU)</strong> และ <strong>WebGPU (GPU)</strong> 
+        ตามขนาด Batch Size เพื่อหาจุด Crossover Point
       </p>
 
       <div class="panel">
@@ -230,12 +232,11 @@
       </div>
 
       <div class="panel">
-        <h3>ตารางสรุปผลการทดสอบ</h3>
+        <h3>ตารางสรุปผลการทดสอบ Transformer Batch Inference</h3>
         <table>
           <thead>
             <tr>
-              <th>Batch Size (Elements)</th>
-              <th>Data Size</th>
+              <th>Batch Size (Sentences)</th>
               <th>WASM Time (ms)</th>
               <th>WebGPU Time (ms)</th>
               <th>Winner</th>
@@ -246,10 +247,10 @@
           <tbody id="results-body">
             <tr>
               <td
-                colspan="7"
+                colspan="6"
                 style="text-align: center; color: #6b7280; padding: 20px"
               >
-                กดปุ่ม "เริ่มต้นทดสอบ" เพื่อรัน Benchmark
+                กดปุ่ม "เริ่มต้นทดสอบ" เพื่อรัน Transformer Benchmark
               </td>
             </tr>
           </tbody>
@@ -257,160 +258,54 @@
       </div>
 
       <div class="note-box">
-        <h4>ข้อสังเกตและวิเคราะห์ผลลัพธ์:</h4>
+        <h4>ข้อสังเกตและวิเคราะห์ผลลัพธ์ (Transformer Model):</h4>
         <ul>
           <li>
-            <strong>Batch Size ขนาดเล็ก:</strong> WASM (CPU) เร็วกว่า
-            เนื่องจากไม่มี GPU Dispatch & Memory Copy Overhead
+            <strong>Batch Size ขนาดเล็ก (1-2 ประโยค):</strong> WASM (CPU) อาจทำเวลาได้ใกล้เคียงหรือได้เปรียบด้าน Initialization / CPU Overhead ต่ำกว่า
           </li>
           <li>
-            <strong>Batch Size ขนาดใหญ่:</strong> WebGPU (GPU) เร็วกว่า
-            เนื่องจากใช้ประโยชน์จาก Parallel Compute Cores
+            <strong>Batch Size ขนาดใหญ่ (4-32+ ประโยค):</strong> WebGPU (GPU) จะมีประสิทธิภาพสูงกว่าอย่างชัดเจนจากการประมวลผล Matrix Multiplication แบบขนาน (Parallel Tensor Operations)
           </li>
           <li>
-            <strong>Crossover Point:</strong> จุดขนาดข้อมูลที่เวลาการประมวลผลของ
-            WebGPU สลับมาเร็วกว่า WASM
+            <strong>Crossover Point:</strong> ขนาด Batch Size ของข้อความที่เวลาประมวลผลของ WebGPU พลิกมาเร็วกว่า WASM
           </li>
         </ul>
       </div>
     </div>
 
     <script type="module">
-      const shaderCode = `
-        @group(0) @binding(0) var<storage, read_write> data: array<f32>;
+      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
 
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-          let index = id.x;
-          if (index < arrayLength(&data)) {
-            data[index] = data[index] * 2.0;
-          }
-        }
-      `;
-
-      const BATCH_SIZES = [
-        100, 1000, 10000, 100000, 500000, 1000000, 5000000, 10000000,
+      const BATCH_SIZES = [1, 2, 4, 8, 16, 32];
+      const SAMPLE_SENTENCES = [
+        "Looking for 5mm stainless steel sheets from Posco in Pohang.",
+        "Apple Inc. announced new AI chips designed in Cupertino California.",
+        "Google headquarters is located in Mountain View, California.",
+        "Tesla is expanding its Giga Factory operations in Berlin Germany.",
+        "Samsung Electronics reported high demand for DRAM memory chips.",
+        "Microsoft is integrating OpenAI models into Azure Cloud services.",
+        "Amazon fulfillment center operates automated robotics in Seattle.",
+        "NVIDIA graphics processors accelerate deep learning computation worldwide."
       ];
 
-      let wasmInstance = null;
-      let gpuDevice = null;
+      function generateBatch(size) {
+        const batch = [];
+        for (let i = 0; i < size; i++) {
+          batch.push(SAMPLE_SENTENCES[i % SAMPLE_SENTENCES.length]);
+        }
+        return batch;
+      }
+
+      let extractor_wasm = null;
+      let extractor_gpu = null;
       let chart = null;
-
-      async function initWasm() {
-        const response = await fetch("multiply.wasm");
-        const bytes = await response.arrayBuffer();
-        const { instance } = await WebAssembly.instantiate(bytes, {});
-        wasmInstance = instance;
-      }
-
-      async function initWebGPU() {
-        if (!navigator.gpu) {
-          throw new Error("WebGPU ไม่ได้รับการรองรับบนเบราว์เซอร์นี้");
-        }
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) throw new Error("ไม่พบ WebGPU Adapter");
-        gpuDevice = await adapter.requestDevice();
-      }
-
-      function runWasmBenchmark(inputArray) {
-        const len = inputArray.length;
-        const bytesNeeded = len * 4;
-        const currentBytes = wasmInstance.exports.memory.buffer.byteLength;
-
-        if (currentBytes < bytesNeeded) {
-          const additionalPages = Math.ceil(
-            (bytesNeeded - currentBytes) / 65536,
-          );
-          wasmInstance.exports.memory.grow(additionalPages);
-        }
-
-        const start = performance.now();
-        const memoryView = new Float32Array(
-          wasmInstance.exports.memory.buffer,
-          0,
-          len,
-        );
-        memoryView.set(inputArray);
-        wasmInstance.exports.multiply_array(0, len);
-        const dummyCheck = memoryView[0];
-        const end = performance.now();
-
-        return end - start;
-      }
-
-      async function runWebGPUBenchmark(inputArray) {
-        const size = inputArray.byteLength;
-        const start = performance.now();
-
-        const gpuBuffer = gpuDevice.createBuffer({
-          size: size,
-          usage:
-            GPUBufferUsage.STORAGE |
-            GPUBufferUsage.COPY_SRC |
-            GPUBufferUsage.COPY_DST,
-        });
-
-        gpuDevice.queue.writeBuffer(gpuBuffer, 0, inputArray);
-
-        const readBuffer = gpuDevice.createBuffer({
-          size: size,
-          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
-
-        const shaderModule = gpuDevice.createShaderModule({ code: shaderCode });
-        const computePipeline = gpuDevice.createComputePipeline({
-          layout: "auto",
-          compute: {
-            module: shaderModule,
-            entryPoint: "main",
-          },
-        });
-
-        const bindGroup = gpuDevice.createBindGroup({
-          layout: computePipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: gpuBuffer } }],
-        });
-
-        const commandEncoder = gpuDevice.createCommandEncoder();
-        const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setPipeline(computePipeline);
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil(inputArray.length / 256));
-        passEncoder.end();
-
-        commandEncoder.copyBufferToBuffer(gpuBuffer, 0, readBuffer, 0, size);
-        gpuDevice.queue.submit([commandEncoder.finish()]);
-
-        await readBuffer.mapAsync(GPUMapMode.READ);
-        const resultArray = new Float32Array(readBuffer.getMappedRange());
-        const dummyCheck = resultArray[0];
-        readBuffer.unmap();
-
-        gpuBuffer.destroy();
-        readBuffer.destroy();
-
-        const end = performance.now();
-        return end - start;
-      }
-
-      function formatBytes(bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-      }
-
-      function formatNumber(num) {
-        if (num >= 1000000) return num / 1000000 + "M";
-        if (num >= 1000) return num / 1000 + "K";
-        return num.toString();
-      }
 
       function initChart() {
         const ctx = document.getElementById("benchmarkChart").getContext("2d");
         chart = new Chart(ctx, {
           type: "line",
           data: {
-            labels: BATCH_SIZES.map((n) => formatNumber(n)),
+            labels: BATCH_SIZES.map((n) => `Batch ${n}`),
             datasets: [
               {
                 label: "WASM Time (ms)",
@@ -435,11 +330,11 @@
             maintainAspectRatio: false,
             scales: {
               x: {
-                title: { display: true, text: "Batch Size (Elements)" },
+                title: { display: true, text: "Batch Size (Number of Sentences)" },
               },
               y: {
-                type: "logarithmic",
-                title: { display: true, text: "Time (ms) - Log Scale" },
+                type: "linear",
+                title: { display: true, text: "Inference Time (ms)" },
               },
             },
           },
@@ -455,11 +350,35 @@
         tbody.innerHTML = "";
 
         try {
-          status.innerText = "กำลังโหลด WASM...";
-          if (!wasmInstance) await initWasm();
+          // 1. โหลดโมเดล WASM
+          if (!extractor_wasm) {
+            status.innerText = "⏳ โหลดโมเดล Transformer WASM (CPU)...";
+            extractor_wasm = await pipeline(
+              "token-classification",
+              "Xenova/bert-base-NER",
+              { device: "wasm" }
+            );
+          }
 
-          status.innerText = "กำลังเตรียม WebGPU...";
-          if (!gpuDevice) await initWebGPU();
+          // 2. โหลดโมเดล WebGPU
+          if (!extractor_gpu) {
+            if (!navigator.gpu) {
+              alert("เบราว์เซอร์นี้ไม่รองรับ WebGPU");
+              status.innerText = "❌ WebGPU ไม่ได้รับการรองรับ";
+              return;
+            }
+            status.innerText = "⏳ โหลดโมเดล Transformer WebGPU (GPU)...";
+            extractor_gpu = await pipeline(
+              "token-classification",
+              "Xenova/bert-base-NER",
+              { device: "webgpu", dtype: "fp32" }
+            );
+          }
+
+          // 3. Warmup
+          status.innerText = "🔥 กำลัง Warmup Shaders & Pipelines...";
+          await extractor_wasm(["Warmup sentence"], { aggregation_strategy: "first" });
+          await extractor_gpu(["Warmup sentence"], { aggregation_strategy: "first" });
 
           if (!chart) initChart();
 
@@ -468,39 +387,30 @@
           let crossoverBatch = null;
           let prevWinner = null;
 
+          // 4. ทดสอบแต่ละ Batch Size
           for (let i = 0; i < BATCH_SIZES.length; i++) {
             const batchSize = BATCH_SIZES[i];
-            const dataBytes = batchSize * 4;
-            status.innerText = `กำลังทดสอบ Batch Size: ${formatNumber(batchSize)} elements...`;
+            status.innerText = `⚡ กำลังทดสอบ Batch Size: ${batchSize} ประโยค...`;
+            const inputBatch = generateBatch(batchSize);
 
-            const inputArray = new Float32Array(batchSize);
-            for (let k = 0; k < batchSize; k++) inputArray[k] = k * 1.5;
+            // WASM Inference
+            const startWasm = performance.now();
+            await extractor_wasm(inputBatch, { aggregation_strategy: "first" });
+            const wasmTime = performance.now() - startWasm;
 
-            if (i === 0) {
-              runWasmBenchmark(inputArray);
-              await runWebGPUBenchmark(inputArray);
-            }
+            // WebGPU Inference
+            const startGpu = performance.now();
+            await extractor_gpu(inputBatch, { aggregation_strategy: "first" });
+            const webgpuTime = performance.now() - startGpu;
 
-            const runs = batchSize >= 5000000 ? 2 : 5;
-            let wasmSum = 0;
-            let webgpuSum = 0;
+            wasmTimes.push(wasmTime);
+            webgpuTimes.push(webgpuTime);
 
-            for (let r = 0; r < runs; r++) {
-              wasmSum += runWasmBenchmark(inputArray);
-              webgpuSum += await runWebGPUBenchmark(inputArray);
-            }
-
-            const wasmAvg = wasmSum / runs;
-            const webgpuAvg = webgpuSum / runs;
-
-            wasmTimes.push(wasmAvg);
-            webgpuTimes.push(webgpuAvg);
-
-            const isWasmFaster = wasmAvg < webgpuAvg;
+            const isWasmFaster = wasmTime < webgpuTime;
             const currentWinner = isWasmFaster ? "WASM" : "WebGPU";
             const speedup = isWasmFaster
-              ? (webgpuAvg / wasmAvg).toFixed(2) + "x"
-              : (wasmAvg / webgpuAvg).toFixed(2) + "x";
+              ? (webgpuTime / wasmTime).toFixed(2) + "x"
+              : (wasmTime / webgpuTime).toFixed(2) + "x";
 
             let isCrossover = false;
             if (prevWinner && prevWinner !== currentWinner && !crossoverBatch) {
@@ -513,10 +423,9 @@
             if (isCrossover) tr.classList.add("crossover-row");
 
             tr.innerHTML = `
-              <td>${batchSize.toLocaleString()} (${formatNumber(batchSize)})</td>
-              <td>${formatBytes(dataBytes)}</td>
-              <td style="color: #b45309;">${wasmAvg.toFixed(3)} ms</td>
-              <td style="color: #047857;">${webgpuAvg.toFixed(3)} ms</td>
+              <td>Batch Size = ${batchSize} (${batchSize} ประโยค)</td>
+              <td style="color: #b45309; font-weight: 600;">${wasmTime.toFixed(2)} ms</td>
+              <td style="color: #047857; font-weight: 600;">${webgpuTime.toFixed(2)} ms</td>
               <td>
                 <span class="badge ${isWasmFaster ? "badge-wasm" : "badge-webgpu"}">
                   ${currentWinner}
@@ -533,36 +442,34 @@
             chart.data.datasets[1].data = webgpuTimes;
             chart.update();
 
-            await new Promise((r) => setTimeout(r, 40));
+            await new Promise((r) => setTimeout(r, 50));
           }
 
+          // สรุปผล Crossover
           const crossoverCard = document.getElementById("crossover-point");
           const wasmRange = document.getElementById("wasm-range");
           const webgpuRange = document.getElementById("webgpu-range");
 
           if (crossoverBatch) {
-            crossoverCard.innerText = `~ ${formatNumber(crossoverBatch)} elements`;
-            wasmRange.innerText = `< ${formatNumber(crossoverBatch)}`;
-            webgpuRange.innerText = `≥ ${formatNumber(crossoverBatch)}`;
+            crossoverCard.innerText = `Batch Size ~ ${crossoverBatch}`;
+            wasmRange.innerText = `< ${crossoverBatch}`;
+            webgpuRange.innerText = `≥ ${crossoverBatch}`;
           } else {
-            if (
-              wasmTimes[wasmTimes.length - 1] <
-              webgpuTimes[webgpuTimes.length - 1]
-            ) {
-              crossoverCard.innerText = "ยังไม่พบ (WASM เร็วกว่าทุกช่วง)";
+            if (wasmTimes[wasmTimes.length - 1] < webgpuTimes[webgpuTimes.length - 1]) {
+              crossoverCard.innerText = "ไม่พบ (WASM เร็วกว่าทุกช่วง)";
               wasmRange.innerText = "ทุกช่วง";
               webgpuRange.innerText = "N/A";
             } else {
-              crossoverCard.innerText = `< ${formatNumber(BATCH_SIZES[0])}`;
+              crossoverCard.innerText = `Batch Size ≤ ${BATCH_SIZES[0]}`;
               wasmRange.innerText = "N/A";
               webgpuRange.innerText = "ทุกช่วง";
             }
           }
 
-          status.innerText = "การทดสอบเสร็จสมบูรณ์!";
+          status.innerText = "✅ การทดสอบ Transformer Benchmark เสร็จสมบูรณ์!";
         } catch (err) {
           console.error("Benchmark error:", err);
-          status.innerText = "เกิดข้อผิดพลาด: " + err.message;
+          status.innerText = "❌ เกิดข้อผิดพลาด: " + err.message;
         } finally {
           runBtn.disabled = false;
         }
