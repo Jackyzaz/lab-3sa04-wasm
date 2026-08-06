@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkpoint 5: The AI Crossover Stress Test (WASM vs WebGPU)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Chart.js for Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg-color: #0b0f19;
+        --card-bg: #131b2e;
+        --card-border: #1e293b;
+        --text-main: #f1f5f9;
+        --text-muted: #94a3b8;
+        --accent-wasm: #f97316;
+        --accent-webgpu: #06b6d4;
+        --accent-green: #10b981;
+        --accent-purple: #8b5cf6;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        line-height: 1.6;
+        padding: 24px;
+        max-width: 1280px;
+        margin: 0 auto;
+      }
+
+      header {
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--card-border);
+        padding-bottom: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 4px;
+      }
+
+      .subtitle {
+        color: var(--text-muted);
+        font-size: 14px;
+      }
+
+      .author-tag {
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: #38bdf8;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      @media (min-width: 960px) {
+        .grid {
+          grid-template-columns: 340px 1fr;
+        }
+      }
+
+      .card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        margin-bottom: 20px;
+      }
+
+      .card-title {
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-box {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+
+      .status-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .status-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .badge-pending {
+        background: #334155;
+        color: #94a3b8;
+      }
+      .badge-loading {
+        background: #0284c7;
+        color: #ffffff;
+      }
+      .badge-ready {
+        background: #059669;
+        color: #ffffff;
+      }
+      .badge-error {
+        background: #dc2626;
+        color: #ffffff;
+      }
+
+      .btn {
+        width: 100%;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        color: white;
+        border: none;
+        padding: 14px 18px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+      }
+
+      .btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .progress-container {
+        margin-top: 14px;
+      }
+
+      .progress-bar-bg {
+        width: 100%;
+        height: 8px;
+        background: #1e293b;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 6px;
+      }
+
+      .progress-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        transition: width 0.3s ease;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--card-border);
+      }
+
+      th {
+        background-color: rgba(15, 23, 42, 0.8);
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+      }
+
+      .wasm-val {
+        color: var(--accent-wasm);
+        font-weight: 600;
+        font-family: "Fira Code", monospace;
+      }
+
+      .webgpu-val {
+        color: var(--accent-webgpu);
+        font-weight: 600;
+        font-family: "Fira Code", monospace;
+      }
+
+      .winner-badge {
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .winner-wasm {
+        background: rgba(249, 115, 22, 0.2);
+        color: var(--accent-wasm);
+        border: 1px solid var(--accent-wasm);
+      }
+
+      .winner-webgpu {
+        background: rgba(6, 182, 212, 0.2);
+        color: var(--accent-webgpu);
+        border: 1px solid var(--accent-webgpu);
+      }
+
+      .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      @media (min-width: 1100px) {
+        .charts-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .chart-box {
+        background: #0f172a;
+        border: 1px solid var(--card-border);
+        border-radius: 10px;
+        padding: 16px;
+        height: 320px;
+        position: relative;
+      }
+
+      .insights-box {
+        margin-top: 20px;
+        background: rgba(139, 92, 246, 0.08);
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        border-radius: 8px;
+        padding: 18px;
+        font-size: 14px;
+      }
+
+      .insights-title {
+        color: var(--accent-purple);
+        font-weight: 700;
+        font-size: 15px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .console-notice {
+        margin-top: 14px;
+        font-family: "Fira Code", monospace;
+        font-size: 12px;
+        color: #38bdf8;
+        background: #0f172a;
+        padding: 10px;
+        border-radius: 6px;
+        border-left: 3px solid #38bdf8;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Checkpoint 5: The AI Crossover Stress Test</h1>
+        <p class="subtitle">
+          ค้นหาจุดตัดประสิทธิภาพ (Crossover Point) ระหว่าง WASM (CPU) และ WebGPU (GPU) สำหรับ Batch Inference
+        </p>
+      </div>
+      <div class="author-tag">WASM Lab - Checkpoint 5</div>
+    </header>
+
+    <div class="grid">
+      <!-- Control Panel & Status -->
+      <div>
+        <div class="card">
+          <div class="card-title">⚙️ Control Panel</div>
+
+          <div class="status-box">
+            <div class="status-item">
+              <span>สถาปัตยกรรม WASM:</span>
+              <span id="wasm-status" class="badge badge-pending">รอดำเนินการ</span>
+            </div>
+            <div class="status-item">
+              <span>สถาปัตยกรรม WebGPU:</span>
+              <span id="webgpu-status" class="badge badge-pending">รอดำเนินการ</span>
+            </div>
+          </div>
+
+          <button id="start-btn" class="btn" onclick="startStressTest()">
+            🚀 เริ่มการทดสอบ Benchmark (Batch 1-500)
+          </button>
+
+          <div class="progress-container">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                font-size: 12px;
+                color: var(--text-muted);
+              "
+            >
+              <span id="progress-text">สถานะ: พร้อมรัน</span>
+              <span id="progress-percent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="progress-bar" class="progress-bar-fill"></div>
+            </div>
+          </div>
+
+          <div class="console-notice">
+            💡 ผลลัพธ์เวลาทั้งหมดถูกบันทึกลง <strong>Console (F12)</strong> เพื่อให้ TA ตรวจสอบเรียบร้อยแล้ว
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-title" style="font-size: 15px;">📝 Data Spec</div>
+          <p style="font-size: 13px; color: var(--text-muted);">
+            <strong>Model:</strong> Xenova/bert-base-NER<br />
+            <strong>Task:</strong> Token Classification<br />
+            <strong>Batch Sizes:</strong> 1, 10, 50, 100, 500<br />
+            <strong>Sample Input:</strong> "Looking for 5mm stainless steel sheets from Posco."
+          </p>
+        </div>
+      </div>
+
+      <!-- Benchmark Results & Visualizations -->
+      <div>
+        <div class="card">
+          <div class="card-title">📊 Benchmark Comparison Table</div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Batch Size</th>
+                <th>WASM (CPU)</th>
+                <th>WebGPU (GPU)</th>
+                <th>Speedup (GPU vs CPU)</th>
+                <th>ผู้ชนะ (Winner)</th>
+              </tr>
+            </thead>
+            <tbody id="results-tbody">
+              <tr>
+                <td
+                  colspan="5"
+                  style="text-align: center; color: var(--text-muted); padding: 24px;"
+                >
+                  กดปุ่ม "เริ่มการทดสอบ Benchmark" เพื่อทำการประมวลผล Batch 1, 10, 50, 100, 500
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Charts Visualization Section -->
+          <div class="charts-grid">
+            <div>
+              <div class="card-title" style="font-size: 14px; margin-bottom: 8px;">
+                📈 Latency Curve (Crossover Visualization)
+              </div>
+              <div class="chart-box">
+                <canvas id="crossoverChart"></canvas>
+              </div>
+            </div>
+
+            <div>
+              <div class="card-title" style="font-size: 14px; margin-bottom: 8px;">
+                ⚡ WebGPU Speedup Factor (x Times Faster)
+              </div>
+              <div class="chart-box">
+                <canvas id="speedupChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Analytical Insights -->
+          <div id="insights-section" class="insights-box" style="display: none;">
+            <div class="insights-title">🔍 Garvis Analytical Summary</div>
+            <div id="insights-text"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+      let extractorWasm = null;
+      let extractorGpu = null;
+
+      const batchSizes = [1, 10, 50, 100, 500];
+      const benchmarkResults = [];
+      const sampleText = "Looking for 5mm stainless steel sheets from Posco.";
+
+      // DOM Elements
+      const wasmStatusEl = document.getElementById("wasm-status");
+      const webgpuStatusEl = document.getElementById("webgpu-status");
+      const startBtn = document.getElementById("start-btn");
+      const progressText = document.getElementById("progress-text");
+      const progressPercent = document.getElementById("progress-percent");
+      const progressBar = document.getElementById("progress-bar");
+      const resultsTbody = document.getElementById("results-tbody");
+      const insightsSection = document.getElementById("insights-section");
+      const insightsText = document.getElementById("insights-text");
+
+      // Chart instances
+      let crossoverChartInstance = null;
+      let speedupChartInstance = null;
+
+      function setStatus(element, text, type) {
+        element.textContent = text;
+        element.className = `badge badge-${type}`;
+      }
+
+      function updateProgress(percent, text) {
+        progressBar.style.width = `${percent}%`;
+        progressPercent.textContent = `${percent}%`;
+        progressText.textContent = text;
+      }
+
+      function initCharts() {
+        const ctxCrossover = document.getElementById("crossoverChart").getContext("2d");
+        const ctxSpeedup = document.getElementById("speedupChart").getContext("2d");
+
+        crossoverChartInstance = new Chart(ctxCrossover, {
+          type: "line",
+          data: {
+            labels: batchSizes.map((b) => `Batch ${b}`),
+            datasets: [
+              {
+                label: "WASM (CPU) Latency (ms)",
+                data: [],
+                borderColor: "#f97316",
+                backgroundColor: "rgba(249, 115, 22, 0.1)",
+                borderWidth: 2,
+                tension: 0.3,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+              },
+              {
+                label: "WebGPU (GPU) Latency (ms)",
+                data: [],
+                borderColor: "#06b6d4",
+                backgroundColor: "rgba(6, 182, 212, 0.1)",
+                borderWidth: 2,
+                tension: 0.3,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: "#94a3b8" } },
+              tooltip: { mode: "index", intersect: false },
+            },
+            scales: {
+              x: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+              y: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#1e293b" },
+                title: { display: true, text: "Time (ms)", color: "#94a3b8" },
+              },
+            },
+          },
+        });
+
+        speedupChartInstance = new Chart(ctxSpeedup, {
+          type: "bar",
+          data: {
+            labels: batchSizes.map((b) => `Batch ${b}`),
+            datasets: [
+              {
+                label: "Speedup Factor (CPU Time / GPU Time)",
+                data: [],
+                backgroundColor: batchSizes.map(() => "rgba(6, 182, 212, 0.7)"),
+                borderColor: "#06b6d4",
+                borderWidth: 1,
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: "#94a3b8" } },
+            },
+            scales: {
+              x: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+              y: {
+                ticks: { color: "#94a3b8" },
+                grid: { color: "#1e293b" },
+                title: { display: true, text: "Speedup (x)", color: "#94a3b8" },
+              },
+            },
+          },
+        });
+      }
+
+      async function initializeModels() {
+        startBtn.disabled = true;
+        updateProgress(5, "กำลังตรวจสอบ WebGPU Support...");
+
+        if (!navigator.gpu) {
+          setStatus(webgpuStatusEl, "ไม่รองรับ", "error");
+          updateProgress(0, "WebGPU ไม่รองรับบนเบราว์เซอร์นี้");
+          alert("WebGPU ไม่ถูกรองรับในเบราว์เซอร์นี้");
+          return false;
+        }
+
+        try {
+          // 1. WASM Pipeline setup
+          setStatus(wasmStatusEl, "กำลังโหลด...", "loading");
+          updateProgress(10, "กำลังโหลดโมเดล BERT (WASM / CPU)...");
+          console.log("[Setup] Loading WASM (CPU) Model pipeline...");
+          extractorWasm = await pipeline(
+            "token-classification",
+            "Xenova/bert-base-NER"
+          );
+          setStatus(wasmStatusEl, "พร้อมใช้งาน", "ready");
+
+          console.log("[Setup] Warming up WASM model...");
+          await extractorWasm("warm up");
+
+          // 2. WebGPU Pipeline setup
+          setStatus(webgpuStatusEl, "กำลังโหลด...", "loading");
+          updateProgress(25, "กำลังโหลดโมเดล BERT (WebGPU / Q8)...");
+          console.log("[Setup] Loading WebGPU Model pipeline...");
+          extractorGpu = await pipeline(
+            "token-classification",
+            "Xenova/bert-base-NER",
+            { device: "webgpu", dtype: "q8" }
+          );
+
+          setStatus(webgpuStatusEl, "Warming up Shaders...", "loading");
+          updateProgress(35, "กำลัง Warm-up WGSL Shaders เข้า VRAM...");
+          console.log("[Setup] Warming up WebGPU WGSL Shaders...");
+          await extractorGpu("warm up");
+
+          setStatus(webgpuStatusEl, "พร้อมใช้งาน", "ready");
+          updateProgress(40, "โหลดโมเดลสำเร็จทั้ง 2 สถาปัตยกรรม!");
+          startBtn.disabled = false;
+
+          initCharts();
+          return true;
+        } catch (err) {
+          console.error("Error loading models:", err);
+          alert("เกิดข้อผิดพลาดในการโหลดโมเดล: " + err.message);
+          return false;
+        }
+      }
+
+      async function startStressTest() {
+        startBtn.disabled = true;
+        benchmarkResults.length = 0;
+        resultsTbody.innerHTML = "";
+        insightsSection.style.display = "none";
+
+        if (!crossoverChartInstance) {
+          initCharts();
+        }
+
+        crossoverChartInstance.data.datasets[0].data = [];
+        crossoverChartInstance.data.datasets[1].data = [];
+        speedupChartInstance.data.datasets[0].data = [];
+        crossoverChartInstance.update();
+        speedupChartInstance.update();
+
+        if (!extractorWasm || !extractorGpu) {
+          const ready = await initializeModels();
+          if (!ready) return;
+        }
+
+        console.clear();
+        console.log("%c=======================================================", "color: #38bdf8; font-weight: bold;");
+        console.log("%c  Checkpoint 5: The AI Crossover Stress Test Benchmark ", "color: #818cf8; font-weight: bold; font-size: 14px;");
+        console.log("%c=======================================================", "color: #38bdf8; font-weight: bold;");
+
+        const totalSteps = batchSizes.length;
+
+        for (let i = 0; i < totalSteps; i++) {
+          const batchSize = batchSizes[i];
+          const currentProgress = Math.round(40 + ((i + 1) / totalSteps) * 60);
+
+          updateProgress(
+            currentProgress,
+            `กำลังทดสอบ Batch Size: ${batchSize} (${i + 1}/${totalSteps})...`
+          );
+
+          const batchData = Array(batchSize).fill(sampleText);
+
+          // Give browser UI time to render progress
+          await new Promise((resolve) => setTimeout(resolve, 60));
+
+          // WASM execution timing
+          console.log(`\n[Batch ${batchSize}] Running WASM (CPU)...`);
+          const tWasmStart = performance.now();
+          await extractorWasm(batchData);
+          const wasmTime = Number((performance.now() - tWasmStart).toFixed(2));
+          console.log(`[Batch ${batchSize}] WASM Time: ${wasmTime} ms`);
+
+          // WebGPU execution timing
+          console.log(`[Batch ${batchSize}] Running WebGPU (GPU)...`);
+          const tGpuStart = performance.now();
+          await extractorGpu(batchData);
+          const gpuTime = Number((performance.now() - tGpuStart).toFixed(2));
+          console.log(`[Batch ${batchSize}] WebGPU Time: ${gpuTime} ms`);
+
+          const speedupRatioVal = (wasmTime / gpuTime);
+          const speedupRatioStr = `${speedupRatioVal.toFixed(2)}x`;
+          const isGpuWinner = gpuTime < wasmTime;
+
+          const resultObj = {
+            batchSize,
+            wasmTimeMs: wasmTime,
+            webgpuTimeMs: gpuTime,
+            speedupRatioNum: speedupRatioVal,
+            speedupRatio: speedupRatioStr,
+            winner: isGpuWinner ? "WebGPU" : "WASM",
+          };
+
+          benchmarkResults.push(resultObj);
+          renderTableRow(resultObj);
+          updateCharts(resultObj);
+        }
+
+        updateProgress(100, "การทดสอบ Benchmark เสร็จสมบูรณ์!");
+        startBtn.disabled = false;
+
+        // Print structured table to console for TA inspection
+        console.log("\n%c📊 สรุปผลการทดสอบ Benchmark ทั้งหมด (Console Table):", "color: #10b981; font-weight: bold; font-size: 13px;");
+        console.table(
+          benchmarkResults.map((r) => ({
+            "Batch Size": r.batchSize,
+            "WASM (ms)": r.wasmTimeMs,
+            "WebGPU (ms)": r.webgpuTimeMs,
+            "Speedup (x)": r.speedupRatio,
+            "Winner": r.winner,
+          }))
+        );
+
+        // Identify Crossover Point
+        let crossoverBatch = null;
+        for (const res of benchmarkResults) {
+          if (res.winner === "WebGPU") {
+            crossoverBatch = res.batchSize;
+            break;
+          }
+        }
+
+        if (crossoverBatch) {
+          console.log(
+            `%c🎯 Crossover Point Found! WebGPU สามารถประมวลผลได้รวดเร็วแซงหน้า WASM/CPU ตั้งแต่ Batch Size = ${crossoverBatch}`,
+            "color: #06b6d4; font-weight: bold; font-size: 14px; background: #0f172a; padding: 6px; border-radius: 4px;"
+          );
+        }
+
+        renderInsights(crossoverBatch);
+      }
+
+      function renderTableRow(res) {
+        if (resultsTbody.children.length === 1 && resultsTbody.children[0].cells.length === 1) {
+          resultsTbody.innerHTML = "";
+        }
+
+        const tr = document.createElement("tr");
+        const isGpuWinner = res.winner === "WebGPU";
+        const winnerBadgeClass = isGpuWinner ? "winner-webgpu" : "winner-wasm";
+
+        tr.innerHTML = `
+          <td><strong>Batch ${res.batchSize}</strong></td>
+          <td class="wasm-val">${res.wasmTimeMs.toLocaleString()} ms</td>
+          <td class="webgpu-val">${res.webgpuTimeMs.toLocaleString()} ms</td>
+          <td style="font-weight: 600; color: ${isGpuWinner ? "#38bdf8" : "#f97316"}">
+            ${res.speedupRatio}
+          </td>
+          <td><span class="winner-badge ${winnerBadgeClass}">${res.winner} ${isGpuWinner ? "🚀" : "⚡"}</span></td>
+        `;
+        resultsTbody.appendChild(tr);
+      }
+
+      function updateCharts(res) {
+        crossoverChartInstance.data.datasets[0].data.push(res.wasmTimeMs);
+        crossoverChartInstance.data.datasets[1].data.push(res.webgpuTimeMs);
+        speedupChartInstance.data.datasets[0].data.push(res.speedupRatioNum.toFixed(2));
+
+        // Color coding speedup bars: green/cyan for GPU win, orange for CPU win
+        const bgColors = speedupChartInstance.data.datasets[0].data.map((val) =>
+          val >= 1.0 ? "rgba(6, 182, 212, 0.7)" : "rgba(249, 115, 22, 0.7)"
+        );
+        speedupChartInstance.data.datasets[0].backgroundColor = bgColors;
+
+        crossoverChartInstance.update();
+        speedupChartInstance.update();
+      }
+
+      function renderInsights(crossoverBatch) {
+        insightsSection.style.display = "block";
+        const b1 = benchmarkResults.find((r) => r.batchSize === 1);
+        const b500 = benchmarkResults.find((r) => r.batchSize === 500);
+
+        insightsText.innerHTML = `
+          <p style="margin-bottom: 8px;">
+            📌 <strong>บทวิเคราะห์ทางวิศวกรรม (Garvis Analysis):</strong>
+          </p>
+          <ul style="padding-left: 20px; font-size: 13px; line-height: 1.7;">
+            <li><strong>GPU Overhead & Dispatch Penalty (Batch เล็ก):</strong> ที่ Batch 1 (หรือข้อมูลขนาดเล็ก) CPU/WASM อาจทำเวลาได้ใกล้เคียงหรือเร็วกว่าเนื่องจากค่าใช้จ่าย Overhead ในการเตรียม Command Buffer และ Kernel Dispatch ไปยัง GPU</li>
+            <li><strong>Massive Parallel Throughput (Batch ใหญ่):</strong> เมื่อขยาย Batch Data ขึ้นเป็น 50, 100 และ 500 รายการ GPU สามารถกระจายงาน Tensor Computation ไปยังคอร์นับพันพร้อมกันได้อย่างมหาศาล ทำให้การประมวลผลเร็วขึ้นอย่างก้าวกระโดด</li>
+            <li><strong>จุดตัด Crossover Point:</strong> ${
+              crossoverBatch
+                ? `เกิดจุดตัดอย่างชัดเจนตั้งแต่ <strong>Batch Size = ${crossoverBatch}</strong> เป็นต้นไป ซึ่ง WebGPU แสดงพลังแซงหน้า CPU อย่างเห็นได้ชัด`
+                : `พบว่าการประมวลผลมีแนวโน้มเร็วขึ้นตามสเกล`
+            } ${
+          b500
+            ? `(โดยที่ Batch 500 WebGPU ประมวลผลได้รวดเร็วกว่า WASM ถึง <strong>${b500.speedupRatio}</strong>)`
+            : ""
+        }</li>
+          </ul>
+        `;
+      }
+
+      window.startStressTest = startStressTest;
+
+      window.addEventListener("DOMContentLoaded", () => {
+        initializeModels();
+      });
+    </script>
+  </body>
+</html>

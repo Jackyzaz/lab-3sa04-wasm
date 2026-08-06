@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cp3 AI CPU Baseline (WASM)</title>
+  </head>
+  <body>
+    <h1>Cp3 AI CPU Baseline (WASM)</h1>
+    <div id="status" style="font-size: 18px; margin-top: 15px">
+      ⏳ กำลังโหลดโมเดล BERT NER (WASM)...
+    </div>
+    <div id="result" style="margin-top: 15px"></div>
+
+    <script type="module">
+      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+      async function runWASM() {
+        // โหลดโมเดล NER (ค่าเริ่มต้นจะถูกแปลงไปรันบน WASM/CPU อัตโนมัติ)
+        const extractor = await pipeline(
+          "token-classification",
+          "Xenova/bert-base-NER",
+        );
+
+        const start = performance.now();
+        const output = await extractor(
+          "Looking for 5mm stainless steel sheets from Posco.",
+        );
+
+        console.log("Output:", output);
+        console.log("WASM Time:", (performance.now() - start).toFixed(2), "ms");
+      }
+
+      // เรียกใช้งานเมื่อต้องการทดสอบ
+      runWASM();
+    </script>
+  </body>
+</html>

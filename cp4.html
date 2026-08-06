@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Checkpoint 4: AI GPU Dispatch Penalty (WebGPU)</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+        line-height: 1.6;
+      }
+      #status {
+        font-size: 18px;
+        margin-top: 15px;
+        font-weight: bold;
+      }
+      #result {
+        margin-top: 15px;
+        background: #f4f4f9;
+        padding: 15px;
+        border-radius: 8px;
+      }
+      .badge {
+        background: #e0e0e0;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Checkpoint 4: AI GPU Dispatch Penalty (WebGPU)</h1>
+    <div id="status">⏳ กำลังเริ่มต้นระบบ WebGPU...</div>
+    <div id="result"></div>
+
+    <script type="module">
+      import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+      async function runWebGPU() {
+        const statusDiv = document.getElementById("status");
+        const resultDiv = document.getElementById("result");
+
+        // 1. ตรวจสอบว่าเบราว์เซอร์รองรับ WebGPU หรือไม่
+        if (!navigator.gpu) {
+          statusDiv.innerHTML =
+            "<span style='color: red;'>❌ WebGPU ไม่รองรับบนเบราว์เซอร์นี้</span>";
+          return;
+        }
+
+        statusDiv.innerHTML =
+          "⏳ กำลังโหลดโมเดล BERT NER สำหรับ WebGPU (device: 'webgpu')...";
+
+        try {
+          // โหลดโมเดล NER โดยระบุ Option { device: "webgpu" }
+          const extractor_gpu = await pipeline(
+            "token-classification",
+            "Xenova/bert-base-NER",
+            { device: "webgpu", dtype: "q8" },
+          );
+
+          statusDiv.innerHTML = "🔥 Warming up WGSL Shaders into GPU VRAM...";
+          console.log("Warming up shaders...");
+          await extractor_gpu("warm up");
+
+          // 3. เริ่มประมวลผลข้อความจริง
+          statusDiv.innerHTML =
+            "⚡ กำลังประมวลผลคำนวณข้อความบน GPU (Inference)...";
+          const inputText =
+            "Looking for 5mm stainless steel sheets from Posco.";
+
+          const start = performance.now();
+          const output = await extractor_gpu(inputText);
+          const executionTime = (performance.now() - start).toFixed(2);
+
+          console.log("Output:", output);
+          console.log("WebGPU Time:", executionTime, "ms");
+
+          // 4. แสดงผลลัพธ์บนหน้าเว็บ
+          statusDiv.innerHTML = `✅ <strong>ประมวลผลด้วย WebGPU เสร็จสิ้น!</strong>`;
+
+          resultDiv.innerHTML = `
+            <p><strong>ข้อความ Input:</strong> "${inputText}"</p>
+            <p><strong>WebGPU Time:</strong> <span style="color: #007600; font-size: 20px; font-weight: bold;">${executionTime} ms</span></p>
+            <h3>ผลลัพธ์ที่ตรวจพบ (Entities):</h3>
+            <ul>
+              ${output.map((item) => `<li><strong>${item.word}</strong> - Entity: <code class="badge">${item.entity}</code> (Score: ${(item.score * 100).toFixed(1)}%)</li>`).join("")}
+            </ul>
+            <details open style="margin-top: 10px;">
+              <summary style="cursor: pointer; font-weight: bold;">📦 Raw Output Object (console.log)</summary>
+              <pre style="background: #252526; color: #4ec9b0; padding: 10px; border-radius: 5px; overflow-x: auto;">${JSON.stringify(output, null, 2)}</pre>
+            </details>
+          `;
+        } catch (error) {
+          console.error("WebGPU Error:", error);
+          statusDiv.innerHTML = `<span style='color: red;'>❌ เกิดข้อผิดพลาดในการรัน WebGPU: ${error.message}</span>`;
+        }
+      }
+
+      runWebGPU();
+    </script>
+  </body>
+</html>

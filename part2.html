@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h1>Part 2</h1>
+
+
+<script>
+ async function loadWasm(){
+ let result = await fetch("hello.wasm")
+ let compiledmod = await WebAssembly.compile(await result.arrayBuffer())
+ let instance = new WebAssembly.Instance(compiledmod)
+
+ console.log(instance)
+
+ let ref = instance.exports.c_hello()
+ let buffer = new Uint8Array(instance.exports.memory.buffer); // from gemini
+ let mytext = "";
+ for (let i=ref; buffer[i]; i++){
+    mytext += String.fromCharCode(buffer[i]);
+ }
+ console.log(mytext)
+ }
+
+
+ 
+
+ loadWasm()
+
+</script>
+
+</body>
