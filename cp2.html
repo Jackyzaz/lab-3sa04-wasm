@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <meta charset="UTF-8" />
@@ -26,7 +26,11 @@
         // ฟังก์ชันหลักที่ทำงานบน GPU โดยดึง global_invocation_id มาเป็นตัวระบุ index ของข้อมูล
         fn main(@builtin(global_invocation_id) id: vec3<u32>) {
           let index = id.x; // ดึง index แกน x ของ thread ปัจจุบัน
-          data[index] = data[index] * 2.0; // นำค่าใน array ตำแหน่งนั้นมาคูณ 2.0
+          
+          // ป้องกัน Out-of-Bounds Access: ประมวลผลเฉพาะ thread ที่อยู่ภายในขอบเขตขนาดของ Array
+          if (index < arrayLength(&data)) {
+            data[index] = data[index] * 2.0; // นำค่าใน array ตำแหน่งนั้นมาคูณ 2.0
+          }
         }
       `;
 
