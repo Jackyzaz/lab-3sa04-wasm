@@ -1,163 +1,224 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Checkpoint 2</title>
+    <title>Checkpoint 2: WASM vs WebGPU</title>
   </head>
   <body>
-    <h1>Checkpoint 2 WebGPU</h1>
-    <!-- แสดงสถานะการทำงานของ WebGPU -->
-    <div id="status">⏳ Loading WebGPU...</div>
-    <!-- แสดงข้อมูล Input Array ก่อนส่งเข้า GPU -->
+    <h1>Checkpoint 2: WASM vs WebGPU Comparison</h1>
+    <!-- แสดงสถานะของ Benchmark -->
+    <div id="status">⏳ Loading...</div>
+    <!-- แสดงข้อมูล Input -->
     <div id="input"></div>
-    <!-- แสดงข้อมูล Output Array ที่คำนวณเสร็จจาก GPU -->
-    <div id="output"></div>
-    <!-- แสดงเวลาที่ใช้ในการประมวลผล -->
-    <div id="time"></div>
+    <hr />
+    <!-- ผลลัพธ์และการวัดเวลาของ WASM -->
+    <h3>WASM Result:</h3>
+    <div id="wasm-output"></div>
+    <div id="wasm-time"></div>
+    <hr />
+    <!-- ผลลัพธ์และการวัดเวลาของ WebGPU -->
+    <h3>WebGPU Result:</h3>
+    <div id="webgpu-output"></div>
+    <div id="webgpu-time"></div>
+    <hr />
+    <!-- เปรียบเทียบความแตกต่างด้านเวลา -->
+    <h3>Comparison:</h3>
+    <div id="diff"></div>
 
     <script type="module">
       // โค้ดภาษา WGSL สำหรับสั่งการให้ GPU ประมวลผลแบบขนาน (Compute Shader)
       const shaderCode = `
-        // ประกาศ storage buffer ขนาด array<f32> ให้สามารถอ่านและเขียนข้อมูลได้ที่ group 0 binding 0
+        // ประกาศ storage buffer สำหรับอ่าน/เขียนข้อมูลที่ group 0 binding 0
         @group(0) @binding(0) var<storage, read_write> data: array<f32>;
 
-        // กำหนดให้เป็น compute shader มีขนาด workgroup เท่ากับ 64 threads
+        // กำหนดขนาด workgroup เท่ากับ 64 threads
         @compute @workgroup_size(64)
-        // ฟังก์ชันหลักที่ทำงานบน GPU โดยดึง global_invocation_id มาเป็นตัวระบุ index ของข้อมูล
         fn main(@builtin(global_invocation_id) id: vec3<u32>) {
           let index = id.x; // ดึง index แกน x ของ thread ปัจจุบัน
           
-          // ป้องกัน Out-of-Bounds Access: ประมวลผลเฉพาะ thread ที่อยู่ภายในขอบเขตขนาดของ Array
+          // ป้องกัน Out-of-Bounds Access: ประมวลผลเฉพาะ index ที่อยู่ในขอบเขต array
           if (index < arrayLength(&data)) {
-            data[index] = data[index] * 2.0; // นำค่าใน array ตำแหน่งนั้นมาคูณ 2.0
+            data[index] = data[index] * 2.0; // คูณ 2.0
           }
         }
       `;
 
-      // ฟังก์ชันหลักสำหรับตั้งค่าและรัน WebGPU Compute Shader
-      async function runWebGPU() {
-        // อ้างอิง DOM Element แต่ละส่วนสำหรับแสดงผล
-        const statusDiv = document.getElementById("status");
-        const inputDiv = document.getElementById("input");
-        const outputDiv = document.getElementById("output");
-        const timeDiv = document.getElementById("time");
+      // ฟังก์ชันสำหรับประมวลผลด้วย WASM (WebAssembly)
+      async function runWASM(inputArray) {
+        // 1. ดึงไฟล์ binary ของ WASM (multiply.wasm)
+        const response = await fetch("multiply.wasm");
+        const bytes = await response.arrayBuffer();
 
-        // ตรวจสอบว่าเบราว์เซอร์รองรับ WebGPU API หรือไม่
+        // 2. คอมไพล์และสร้าง WebAssembly Instance
+        const { instance } = await WebAssembly.instantiate(bytes, {});
+
+        // 3. เริ่มจับเวลาประมวลผล WASM
+        const start = performance.now();
+
+        // 4. สร้าง Float32Array View เพื่อเข้าถึงหน่วยความจำ (Memory Buffer) ของ WASM
+        const memoryView = new Float32Array(
+          instance.exports.memory.buffer,
+          0,
+          inputArray.length
+        );
+        // คัดลอกข้อมูล Input ใส่ลงใน WASM Memory
+        memoryView.set(inputArray);
+
+        // 5. เรียกใช้ฟังก์ชัน multiply_array จาก WASM
+        instance.exports.multiply_array(0, inputArray.length);
+
+        // 6. อ่านข้อมูลผลลัพธ์ออกจาก WASM Memory
+        const result = Array.from(memoryView);
+
+        // 7. บันทึกเวลาที่ใช้ในการประมวลผลเสร็จสิ้น
+        const end = performance.now();
+
+        // คืนค่าผลลัพธ์และเวลาที่ใช้ (ms)
+        return {
+          result,
+          time: end - start,
+        };
+      }
+
+      // ฟังก์ชันสำหรับประมวลผลด้วย WebGPU Compute Shader
+      async function runWebGPU(inputArray) {
+        // ตรวจสอบการรองรับ WebGPU API
         if (!navigator.gpu) {
-          statusDiv.innerText = "WebGPU not supported"; // แสดงข้อความเมื่อไม่รองรับ
-          return; // ออกจากการทำงาน
+          throw new Error("WebGPU not supported");
         }
 
-        try {
-          // คำขอเข้าถึง GPU Adapter ของเครื่อง
-          const adapter = await navigator.gpu.requestAdapter();
-          // เชื่อมต่อและขอใช้งาน GPU Device
-          const device = await adapter.requestDevice();
+        // ขอสิทธิ์เชื่อมต่อ GPU Adapter และ Device
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
 
-          // สร้างชุดข้อมูล Input ตัวเลขทศนิยม 32-bit (Float32Array) ในหน่วยความจำ RAM
-          const inputData = new Float32Array([
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
-          ]);
-          // คำนวณขนาดของข้อมูลเป็น bytes (8 ตัว * 4 bytes = 32 bytes)
-          const size = inputData.byteLength;
+        const inputData = new Float32Array(inputArray);
+        const size = inputData.byteLength;
 
-          // แสดงค่า Input Array บนหน้าเว็บ
-          inputDiv.innerText = "Input: " + inputData.join(", ");
+        // เริ่มจับเวลาการจัดเตรียม Buffer, Dispatch และอ่านข้อมูลกลับ
+        const start = performance.now();
 
-          // จองหน่วยความจำ GPU Buffer (VRAM) สำหรับประมวลผล Storage Buffer
-          const gpuBuffer = device.createBuffer({
-            size: size, // ขนาดของ buffer ใน VRAM
-            usage:
-              GPUBufferUsage.STORAGE | // ใช้เป็น storage buffer ให้ shader อ่าน/เขียนได้
-              GPUBufferUsage.COPY_SRC | // อนุญาตให้คัดลอกข้อมูลออกจาก buffer นี้ได้
-              GPUBufferUsage.COPY_DST, // อนุญาตให้คัดลอกข้อมูลเข้า buffer นี้ได้
-          });
+        // 1. จอง VRAM บน GPU สำหรับ Storage Buffer
+        const gpuBuffer = device.createBuffer({
+          size: size,
+          usage:
+            GPUBufferUsage.STORAGE |
+            GPUBufferUsage.COPY_SRC |
+            GPUBufferUsage.COPY_DST,
+        });
 
-          // คัดลอกข้อมูลจากระบบ RAM (inputData) ไปยัง VRAM (gpuBuffer) บน GPU
-          device.queue.writeBuffer(gpuBuffer, 0, inputData);
+        // 2. เขียนข้อมูลจาก RAM ขึ้น VRAM
+        device.queue.writeBuffer(gpuBuffer, 0, inputData);
 
-          // จอง Staging Buffer สำหรับคัดลอกผลลัพธ์จาก GPU กลับมาให้ CPU อ่านบน RAM
-          const readBuffer = device.createBuffer({
-            size: size, // ขนาดเท่ากับข้อมูลผลลัพธ์
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, // ใช้สำหรับ Map เพื่ออ่านข้อมูลกลับ CPU
-          });
+        // 3. จอง Staging Buffer สำหรับคัดลอกผลลัพธ์กลับมาอ่านบน CPU
+        const readBuffer = device.createBuffer({
+          size: size,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
 
-          // คอมไพล์โค้ด WGSL Shader ให้เป็น Shader Module ของ GPU
-          const shaderModule = device.createShaderModule({
-            code: shaderCode, // ส่งสตริงโค้ด WGSL
-          });
+        // 4. คอมไพล์ WGSL Shader Module
+        const shaderModule = device.createShaderModule({
+          code: shaderCode,
+        });
 
-          // สร้าง Compute Pipeline สำหรับกำหนดการทำงานของ Compute Shader
-          const computePipeline = device.createComputePipeline({
-            layout: "auto", // ให้ระบบจัด layout อัตโนมัติจากโค้ด WGSL
-            compute: {
-              module: shaderModule, // ระบุ shader module ที่คอมไพล์ไว้
-              entryPoint: "main", // ระบุชื่อฟังก์ชันเริ่มต้นใน WGSL
-            },
-          });
+        // 5. สร้าง Compute Pipeline
+        const computePipeline = device.createComputePipeline({
+          layout: "auto",
+          compute: {
+            module: shaderModule,
+            entryPoint: "main",
+          },
+        });
 
-          // สร้าง Bind Group เพื่อเชื่อม GPU Buffer เข้ากับ binding ใน WGSL Shader
-          const bindGroup = device.createBindGroup({
-            layout: computePipeline.getBindGroupLayout(0), // ใช้ layout ของ group 0 จาก pipeline
-            entries: [
-              {
-                binding: 0, // ตรงกับ @binding(0) ใน WGSL
-                resource: {
-                  buffer: gpuBuffer, // ผูกเข้ากับ gpuBuffer ใน VRAM
-                },
+        // 6. สร้าง Bind Group เชื่อม Buffer กับ WGSL Shader
+        const bindGroup = device.createBindGroup({
+          layout: computePipeline.getBindGroupLayout(0),
+          entries: [
+            {
+              binding: 0,
+              resource: {
+                buffer: gpuBuffer,
               },
-            ],
-          });
+            },
+          ],
+        });
 
-          // เริ่มจับเวลาเริ่มต้นก่อน Dispatch
-          const start = performance.now();
+        // 7. บันทึกชุดคำสั่ง Command Encoder & Compute Pass
+        const commandEncoder = device.createCommandEncoder();
+        const passEncoder = commandEncoder.beginComputePass();
+        passEncoder.setPipeline(computePipeline);
+        passEncoder.setBindGroup(0, bindGroup);
+        passEncoder.dispatchWorkgroups(Math.ceil(inputData.length / 64));
+        passEncoder.end();
 
-          // สร้าง Command Encoder เพื่อบันทึกชุดคำสั่งที่จะส่งให้ GPU
-          const commandEncoder = device.createCommandEncoder();
-          // เริ่มต้น Compute Pass สำหรับบันทึกคำสั่งประมวลผล Compute Shader
-          const passEncoder = commandEncoder.beginComputePass();
-          // ตั้งค่า Compute Pipeline ที่จะใช้งาน
-          passEncoder.setPipeline(computePipeline);
-          // ตั้งค่า Bind Group ข้อมูลที่จะส่งให้ Shader
-          passEncoder.setBindGroup(0, bindGroup);
-          // Dispatch จำนวน Workgroups (คำนวณจำนวนกลุ่มทำงานตามขนาดข้อมูล / 64)
-          passEncoder.dispatchWorkgroups(Math.ceil(inputData.length / 64));
-          // สิ้นสุดการบันทึก Compute Pass
-          passEncoder.end();
+        // 8. บันทึกคำสั่งคัดลอกผลลัพธ์จาก GPU Buffer ไปยัง Staging Buffer
+        commandEncoder.copyBufferToBuffer(gpuBuffer, 0, readBuffer, 0, size);
+        // ส่งชุดคำสั่งทั้งหมดเข้า GPU Queue
+        device.queue.submit([commandEncoder.finish()]);
 
-          // บันทึกคำสั่งคัดลอกข้อมูลจาก gpuBuffer (VRAM) ไปยัง readBuffer (Staging Buffer)
-          commandEncoder.copyBufferToBuffer(gpuBuffer, 0, readBuffer, 0, size);
-          // สั่งส่งชุดคำสั่งทั้งหมดเข้า Queue เพื่อให้ GPU เริ่มทำงานทันที
-          device.queue.submit([commandEncoder.finish()]);
+        // 9. Map อ่านข้อมูลกลับเข้า CPU RAM
+        await readBuffer.mapAsync(GPUMapMode.READ);
+        const end = performance.now();
 
-          // รอให้ GPU ทำงานเสร็จ และ Map ข้อมูลจาก VRAM กลับมาให้ CPU อ่านได้
-          await readBuffer.mapAsync(GPUMapMode.READ);
-          // บันทึกเวลาเมื่ออ่านข้อมูลกลับเสร็จสิ้น
-          const end = performance.now();
+        // ดึงผลลัพธ์จาก Mapped Memory
+        const resultArray = new Float32Array(readBuffer.getMappedRange());
+        const result = Array.from(resultArray);
 
-          // ดึง Pointer และอ่านข้อมูล Array ผลลัพธ์จาก Mapped Memory
-          const resultArray = new Float32Array(readBuffer.getMappedRange());
+        // คืนค่าผลลัพธ์และเวลาที่ใช้ (ms)
+        return {
+          result,
+          time: end - start,
+        };
+      }
 
-          // อัปเดตข้อความสถานะบนหน้าเว็บ
-          statusDiv.innerText = "Done!";
-          // แสดงผลลัพธ์ Output บนหน้าเว็บ
-          outputDiv.innerText = "Output: " + Array.from(resultArray).join(", ");
-          // แสดงเวลาที่ใช้ไปเป็นมิลลิวินาที
-          timeDiv.innerText = "Time: " + (end - start).toFixed(2) + " ms";
+      // ฟังก์ชันหลักสำหรับเรียกประมวลผลทั้งคู่และเปรียบเทียบผลลัพธ์
+      async function compareWasmVsWebGPU() {
+        const statusDiv = document.getElementById("status");
+        const inputDiv = document.getElementById("input");
+        const wasmOutputDiv = document.getElementById("wasm-output");
+        const wasmTimeDiv = document.getElementById("wasm-time");
+        const webgpuOutputDiv = document.getElementById("webgpu-output");
+        const webgpuTimeDiv = document.getElementById("webgpu-time");
+        const diffDiv = document.getElementById("diff");
 
-          // พิมพ์ข้อมูล Input, Output และ เวลาลงใน Developer Console Log
-          console.log("Input:", Array.from(inputData));
-          console.log("Output:", Array.from(resultArray));
-          console.log("WebGPU Time:", (end - start).toFixed(2), "ms");
+        // กำหนดข้อมูลทดสอบ (Input Array)
+        const inputArray = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        inputDiv.innerText = "Input: " + inputArray.join(", ");
+
+        try {
+          // 1. รัน WASM
+          statusDiv.innerText = "⏳ Running WASM...";
+          const wasmRes = await runWASM(inputArray);
+          wasmOutputDiv.innerText = "Output: " + wasmRes.result.join(", ");
+          wasmTimeDiv.innerText = "Time: " + wasmRes.time.toFixed(3) + " ms";
+
+          // 2. รัน WebGPU
+          statusDiv.innerText = "⏳ Running WebGPU...";
+          const webgpuRes = await runWebGPU(inputArray);
+          webgpuOutputDiv.innerText = "Output: " + webgpuRes.result.join(", ");
+          webgpuTimeDiv.innerText = "Time: " + webgpuRes.time.toFixed(3) + " ms";
+
+          // 3. แสดงผลลัพธ์การเปรียบเทียบ
+          statusDiv.innerText = "✅ Benchmark Completed!";
+
+          const diffMs = Math.abs(webgpuRes.time - wasmRes.time).toFixed(3);
+          const winner = wasmRes.time < webgpuRes.time ? "WASM" : "WebGPU";
+
+          diffDiv.innerText = `Result: ${winner} is faster by ${diffMs} ms (Small data sizes run faster on WASM due to WebGPU Dispatch & Transfer Overhead)`;
+
+          // พิมพ์สรุปลงใน Console
+          console.log("--- Benchmark Results ---");
+          console.log("Input Array:", inputArray);
+          console.log("WASM Output:", wasmRes.result, `Time: ${wasmRes.time.toFixed(3)} ms`);
+          console.log("WebGPU Output:", webgpuRes.result, `Time: ${webgpuRes.time.toFixed(3)} ms`);
+          console.log(`Winner: ${winner} (Diff: ${diffMs} ms)`);
         } catch (err) {
-          // ดักจับข้อผิดพลาดแล้วแสดงบน Console และหน้าเว็บ
-          console.error("WebGPU Error:", err);
+          console.error("Benchmark Error:", err);
           statusDiv.innerText = "Error: " + err.message;
         }
       }
 
-      // เรียกใช้งานฟังก์ชันเพื่อรัน WebGPU ทันทีที่โหลดสคริปต์
-      runWebGPU();
+      // เริ่มทำงานเมื่อสคริปต์ถูกโหลด
+      compareWasmVsWebGPU();
     </script>
   </body>
 </html>
