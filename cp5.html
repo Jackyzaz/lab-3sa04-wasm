@@ -307,41 +307,45 @@
 
       let chart = null;
 
+      // ฟังก์ชันสำหรับเริ่มต้นสร้างกราฟ Chart.js เพื่อเปรียบเทียบประสิทธิภาพ
       function initChart() {
+        // ดึง 2D Rendering Context จากแท็ก <canvas id="chart">
         const ctx = document.getElementById('chart').getContext('2d');
+        
+        // สร้างอ็อบเจกต์ Chart.js สำหรับวาดกราฟ
         chart = new Chart(ctx, {
-          type: 'line',
+          type: 'line', // กำหนดรูปแบบกราฟเป็น เส้น (Line Chart)
           data: {
-            labels: BATCHES,
+            labels: BATCHES, // กำหนดป้ายกำกับแกน X ตามขนาดของ Batch Sizes [1, 10, 50, 100, 500]
             datasets: [
               {
-                label: 'WASM (CPU, q8)',
-                borderColor: '#ef4444',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                data: [],
+                label: 'WASM (CPU, q8)', // ชุดข้อมูล WASM (CPU) ใช้ int8 (q8)
+                borderColor: '#ef4444', // สีเส้นขอบกราฟ (แดง)
+                backgroundColor: 'rgba(239, 68, 68, 0.1)', // สีโปร่งแสงใต้เส้นกราฟ
+                data: [], // อาร์เรย์เก็บข้อมูลเวลา End-to-End Time ของ WASM
                 borderWidth: 2,
-                tension: 0.2,
+                tension: 0.2, // ความโค้งของเส้นกราฟ
               },
               {
-                label: 'WebGPU (GPU, fp32)',
-                borderColor: '#10b981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                data: [],
+                label: 'WebGPU (GPU, fp32)', // ชุดข้อมูล WebGPU (GPU) ใช้ float32 (fp32)
+                borderColor: '#10b981', // สีเส้นขอบกราฟ (เขียว)
+                backgroundColor: 'rgba(16, 185, 129, 0.1)', // สีโปร่งแสงใต้เส้นกราฟ
+                data: [], // อาร์เรย์เก็บข้อมูลเวลา End-to-End Time ของ WebGPU
                 borderWidth: 2,
-                tension: 0.2,
+                tension: 0.2, // ความโค้งของเส้นกราฟ
               }
             ]
           },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, // รองรับการปรับขนาดตามขนาดหน้าจอ (Responsive)
+            maintainAspectRatio: false, // อนุญาตให้ปรับสัดส่วนตามขนาดของ Container
             scales: {
               x: {
-                title: { display: true, text: 'Batch Size (จำนวนข้อความต่อการเรียก)' }
+                title: { display: true, text: 'Batch Size (จำนวนข้อความต่อการเรียก)' } // กำหนดชื่อแกน X
               },
               y: {
-                type: 'logarithmic',
-                title: { display: true, text: 'End-to-End Time (ms) - Log Scale' }
+                type: 'logarithmic', // ใช้สเกล Logarithmic เพื่อรองรับย่านข้อมูลเวลาที่มีความแตกต่างกันสูง
+                title: { display: true, text: 'End-to-End Time (ms) - Log Scale' } // กำหนดชื่อแกน Y
               }
             }
           }
